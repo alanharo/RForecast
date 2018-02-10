@@ -6,18 +6,19 @@
 # Sanborns                                                  #
 #############################################################
 
+
 ## Se importan los datos para los Grupos, historia desde Enero 2016 hasta
 ## Diciembre 2017.
 #
 # Se agregan los paquetes que se van a utilizar:
 t1 <- Sys.time()
 library(matlib)
-library(readr)
+library(readxl)
 library(data.table)
 library(lubridate)
 ## Matriz de Diseño para Día-Mes:
 
-setwd("~/SANBORNS/Merchandise Analytics")
+setwd("~/Merchandise Analytics - Sales Forecast/Sanborns")
 Datos_Cam <- read_excel("CamarasDatos.xlsx", col_types = c("numeric", "date", "numeric"))
 
 # Transformamos nuestros datos de tal forma que se puedan manejar de una manera más 
@@ -39,7 +40,14 @@ Id_Linea <- unique(Datos_sort$Id_Linea)
 
 # Repetimos el proceso para las fechas:
 
-Fechas <- unique(Datos_sort$Id_Fecha)
+# Fechas <- unique(Datos_sort$Id_Fecha)
+
+# En algunos casos no se van a contar con datos para todas las fechas, por lo que se tendrá
+# que generar el vector de manera manual:
+
+Fechas <- as.POSIXct(as.POSIXlt(seq(as.Date("2016-01-01"), to = as.Date("2016-01-01") + 730, 
+                         by = "days" ), "UTC"))
+
 
 # Agregamos las semanas a la tabla:
 
@@ -146,7 +154,7 @@ for (k in Id_Linea){
   S <- matrix(0, nrow = 731, ncol = 6)
   
   
-  semana <- Datos_iter$Id_Semana
+  semana <- Datos_iter$Semana
   
   
   for (i in 1:(length(S[1,]))) {
@@ -180,22 +188,124 @@ for (k in Id_Linea){
   
   y_hat <- X_d%*%Beta
   
-  # Costeamos las unidades, tomando el Costo como el cociente de Inventarios.
-  y_hat_costo <- y_hat*Inv_iter$Costo
+  # Calculamos el vector de errores (o residuales):
+  
+  residuales <- y - y_hat
+  
+  # Graficamos el comportamiento de los residuales, con 3 desviaciones estándar 
+  
+  # plot(1:731, residuales, type = "l", main = "Residuales 67 - FOTOGRAFIA",
+  #      ylim = c(-3*sd(residuales), 3*sd(residuales)))
+  # qqnorm(residuales)
+  # qqline(residuales)
+  
+  # Regresamos la transformación y volvemos a calcular el MAPE
+  
+  # y <- exp(y)
+  # y_hat <- exp(y_hat)
+  # y <- y^2
+  # y_hat <- y_hat^2
+  
+  
+  # Graficamos los valores ajustados:
+  # plot(Fechas, y, col = "black", type = "l")
+  # lines(Fechas, y_hat, col = "blue")
+  
+  
+  
+  # Calculamos el MAPE (Mean Avg. Percentual Error)
+  
+  MAPE <- abs(y_hat - y)
+  MAPE <- MAPE/abs(y)
+  MAPE[MAPE == Inf] <- abs(y_hat[MAPE == Inf] - y[MAPE == Inf])
+  MAPE_tot <- 100*mean(MAPE)
+  
+  # Calculamos el MAPE sin los 5 valores más desviados:
+  # En este caso quitamos 60 valores (o el 8% de los puntos), debido a que el 
+  # mes de Abril presenta muchos datos sin observaciones.
+  MAPE_aj <- MAPE[! MAPE %in% tail(sort(MAPE),60)]
+  MAPE_tot_aj <- 100*mean(MAPE_aj)
+  
+  # Ahora consideramos solamente el último año para comparar contra
+  # un criterio y evaluar que tan bien estuvo el pronóstico.
+  
+  y_2017 <- tail(y,365)
+  y_hat_2017 <- tail(y_hat, 365)
+  
+  # Consideramos ahora un vector de las ventas observadas del 2016, 
+  # omitiendo el 29 de febrero
+  
+  y_2016 <- y[-60]
+  y_2016 <- head(y_2016, 365)
+  
+  # Por último, tomamos el vector del 2016 y como última comparación 
+  # agregamos el crecimiento económico que hubo para ese sector.
+  
+  PIB <- .035
+  y_2016_PIB <- y_2016*(1+PIB)
+  
+  
+  # Ahora calculamos el MAPE nuevo solo para esos años, entre:
+  #   - 2016 y 2017 (Naive natural)
+  #   - 2016 + PIB y 2017 (Naive con Crecimiento)
+  #   - 2017 y Forecast
+  
+  ##
+  ## 2017 y Forecast
+  MAPE_fc2017 <- abs(y_hat_2017 - y_2017)
+  MAPE_fc2017 <- MAPE_fc2017/abs(y_2017)
+  MAPE_fc2017[MAPE_fc2017 == Inf] <- abs(y_hat_2017[MAPE_fc2017 == Inf] - y_2017[MAPE_fc2017 == Inf])
+  MAPE_fc2017_tot <- 100*mean(MAPE_fc2017)
+  
+  # Calculamos el MAPE sin los 5 valores más desviados:
+  MAPE_fc2017_aj <- MAPE_fc2017[! MAPE_fc2017 %in% tail(sort(MAPE_fc2017),60)]
+  MAPE_tot_fc2017_aj <- 100*mean(MAPE_fc2017_aj)
+  
+  ##
+  ## 2016 y 2017
+  MAPE_2016 <- abs(y_2016 - y_2017)
+  MAPE_2016 <- MAPE_2016/abs(y_2017)
+  MAPE_2016[MAPE_2016 == Inf] <- abs(y_2016[MAPE_2016 == Inf] - y_2017[MAPE_2016 == Inf])
+  MAPE_2016_tot <- 100*mean(MAPE_2016)
+  
+  # Calculamos el MAPE sin los 5 valores más desviados:
+  MAPE_2016_aj <- MAPE_2016[! MAPE_2016 %in% tail(sort(MAPE_2016),60)]
+  MAPE_tot_2016_aj <- 100*mean(MAPE_2016_aj)
+  
+  ##
+  ## 2016 + PIB y 2017
+  MAPE_2016PIB <- abs(y_2016_PIB - y_2017)
+  MAPE_2016PIB <- MAPE_2016PIB/abs(y_2017)
+  MAPE_2016PIB[MAPE_2016PIB == Inf] <- abs(y_2016_PIB[MAPE_2016PIB == Inf] - y_2017[MAPE_2016PIB == Inf])
+  MAPE_2016PIB_tot <- 100*mean(MAPE_2016PIB)
+  
+  # Calculamos el MAPE sin los 5 valores más desviados:
+  MAPE_2016PIB_aj <- MAPE_2016PIB[! MAPE_2016PIB %in% tail(sort(MAPE_2016PIB),60)]
+  MAPE_tot_2016PIB_aj <- 100*mean(MAPE_2016PIB_aj)
+  
+  
+  # Por último, graficamos los valores de comparando Real 2017, Forecast y los
+  # dos naives
+  # Creamos una tabla para guardar los valores obtenidos del ajuste:
+  # plot(1:365, y_2017, type = "n", col = "black", main = "67-FOTOGRAFIA")
+  # lines(1:365, y_2017, col = "black")
+  # lines(1:365, y_hat_2017, col = "blue" )
+  # lines(1:365, y_2016, col = "red")
+  # lines(1:365, y_2016_PIB, col = "green")
+  
   
   # Creamos una tabla para guardar los valores obtenidos del ajuste:
   
-  Ajuste <- data.table(Id_Fecha = Fechas,
-                       Id_Seccion = rep(k, length(Fechas)),
-                       Unidades = y_hat,
-                       CVenta = y_hat_costo)
+  Ajuste <- data.table(Id_Linea = rep(k, length(Fechas)),
+                       Id_Fecha = Fechas,
+                       Unidades = y_hat)
   
   Datos_ajustados <- rbindlist(list(Datos_ajustados, Ajuste))
   
   # Ahora falta pronosticar los valores siguientes, en este caso solo lo haremos
   # para Enero.
   
-  FC <- matrix(0, nrow = 59, ncol = 373)
+  FC <- matrix(0, nrow = 365, ncol = 373)
   
   # Agregamos los valores para cada día:
   
@@ -225,26 +335,12 @@ for (k in Id_Linea){
   y_fc <- FC%*%Beta
   
   
-  flag <- sum(as.numeric(y_fc >= 0))
   
-  if (flag == 0){
-    y_fc <- exp(y_fc)
-  } else {
-    y_fc[y_fc < 0] <- 0
-  }
-  
-  part_fc <- y_fc/sum(y_fc)
-  
-  y_fc[y_fc < 0.0001] <- 0
-  part_fc[part_fc < 0.0001] <- 0
-  y_fc_costo <- y_fc*Inv_iter$Costo
   # Creamos una tabla para guardar los valores obtenidos del pronóstico:
   
-  Forecast <- data.table(Id_Fecha = fechas_FC,
-                         Id_Seccion = rep(k, length(fechas_FC)),
-                         Unidades = y_fc,
-                         Participacion = part_fc,
-                         CVenta = y_fc_costo)
+  Forecast <- data.table(Id_Seccion = rep(k, length(fechas_FC)),
+                         Id_Fecha = fechas_FC,
+                         Unidades = y_fc)
   
   Datos_pronosticados <- rbindlist(list(Datos_pronosticados, Forecast))
   
@@ -252,7 +348,7 @@ for (k in Id_Linea){
 }
 
 
-write.csv(Datos_pronosticados, file = "Cigarros_cuadr.csv")
+write.csv(Datos_pronosticados, file = "Fotografia_cuadr.csv")
 
 t2 <- Sys.time()
 
